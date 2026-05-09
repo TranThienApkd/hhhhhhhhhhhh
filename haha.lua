@@ -21,6 +21,7 @@ local function discord(msg, color)
 end
 
 -- Hàm gửi danh sách dài theo từng block (chia 30 dòng / embed)
+-- Có retry 3 lần nếu bị rate-limit, chờ 2.5s giữa các trang
 local function sendList(title, lines)
     local LINES_PER_MSG = 30
     local total = #lines
@@ -34,21 +35,33 @@ local function sendList(title, lines)
             table.insert(chunk, lines[i])
         end
         local body = table.concat(chunk, "\n")
-        pcall(function()
-            request({
-                Url = WEBHOOK, Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({
-                    embeds = {{
-                        title = string.format("%s (%d/%d)", title, p, pages),
-                        description = "```\n"..body.."\n```",
-                        footer = {text = string.format("Items %d–%d / %d", from, to, total)},
-                        color = 0x00ccff,
-                    }}
-                }),
-            })
-        end)
-        wait(1.2) -- tránh rate-limit Discord
+        local payload = HttpService:JSONEncode({
+            embeds = {{
+                title = string.format("%s (%d/%d)", title, p, pages),
+                description = "```\n"..body.."\n```",
+                footer = {text = string.format("Items %d-%d / %d", from, to, total)},
+                color = 0x00ccff,
+            }}
+        })
+
+        -- Retry tối đa 3 lần nếu bị rate-limit
+        for attempt = 1, 3 do
+            local ok, resp = pcall(function()
+                return request({
+                    Url = WEBHOOK, Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = payload,
+                })
+            end)
+            if ok and resp and (resp.StatusCode == 204 or resp.StatusCode == 200 or resp.StatusCode == nil) then
+                break
+            else
+                print("[PS99] Trang "..p.."/"..pages.." lần "..attempt.." thất bại, thử lại sau 3s...")
+                wait(3)
+            end
+        end
+
+        wait(2.5) -- chờ 2.5s giữa các trang để tránh rate-limit
     end
 end
 
