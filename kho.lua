@@ -2,15 +2,11 @@
 -- PS99 INVENTORY SCANNER
 -- Quét kho đồ → gửi uid|id qua Discord
 -- =====================================================
-
 local WEBHOOK = "https://discord.com/api/webhooks/1502609152025952338/9TmUzZ2jRGfdu0tNYMz7lci6s42oYO1Pxj6MvlAU_x8qiMTxcU2awczwsHeYb3SaCDsD"
 local HttpService = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
 local plr = game:GetService("Players").LocalPlayer
 
--- =====================================================
--- HÀM GỬI STATUS
--- =====================================================
 local function discord(msg, color)
     pcall(function()
         request({
@@ -24,22 +20,15 @@ local function discord(msg, color)
     wait(1)
 end
 
--- =====================================================
--- HÀM GỬI DANH SÁCH (có retry 3 lần)
--- =====================================================
 local function sendList(title, lines)
     local LINES_PER_MSG = 30
     local total = #lines
     local pages = math.ceil(total / LINES_PER_MSG)
-
     for p = 1, pages do
         local from = (p - 1) * LINES_PER_MSG + 1
         local to   = math.min(p * LINES_PER_MSG, total)
         local chunk = {}
-        for i = from, to do
-            table.insert(chunk, lines[i])
-        end
-
+        for i = from, to do table.insert(chunk, lines[i]) end
         local payload = HttpService:JSONEncode({
             embeds = {{
                 title = string.format("%s (%d/%d)", title, p, pages),
@@ -48,36 +37,44 @@ local function sendList(title, lines)
                 color = 0x00ff88,
             }}
         })
-
         for attempt = 1, 3 do
             local ok, resp = pcall(function()
-                return request({
-                    Url = WEBHOOK, Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = payload,
-                })
+                return request({ Url = WEBHOOK, Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"}, Body = payload })
             end)
-            if ok and resp and (resp.StatusCode == 204 or resp.StatusCode == 200 or resp.StatusCode == nil) then
-                break
-            else
-                print("[INV] Trang "..p.."/"..pages.." lần "..attempt.." thất bại, thử lại...")
-                wait(3)
-            end
+            if ok and resp and (resp.StatusCode == 204 or resp.StatusCode == 200 or not resp.StatusCode) then break end
+            wait(3)
         end
-
         wait(2.5)
     end
 end
 
 -- =====================================================
--- BẮT ĐẦU
+-- BƯỚC 1: DEBUG – Xem RS.Library.Client có gì
 -- =====================================================
-discord("🟡 **QUÉT KHO ĐỒ**\n**Acc:** `"..plr.Name.."`\nĐang load Save module...", 0xffaa00)
+discord("🔍 **DEBUG: Quét RS.Library.Client...**", 0xffaa00)
 
+local debugLines = {}
+local ClientFolder = nil
+pcall(function()
+    ClientFolder = RS.Library.Client
+end)
+
+if ClientFolder then
+    for _, child in ipairs(ClientFolder:GetChildren()) do
+        table.insert(debugLines, child.ClassName .. " | " .. child.Name)
+    end
+    discord("📁 **RS.Library.Client children:**\n```\n"..table.concat(debugLines, "\n").."\n```", 0x5599ff)
+else
+    discord("❌ RS.Library.Client không tìm thấy!", 0xff0000)
+end
+wait(1)
+
+-- =====================================================
+-- BƯỚC 2: Thử require từng module trong Client
+-- =====================================================
 local uidLines = {}
 local total = 0
-local err_msg = nil
-
 -- Thử nhiều cách để lấy Save module
 local saveOk = pcall(function()
     local SaveModule = nil
