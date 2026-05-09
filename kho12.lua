@@ -1,4 +1,4 @@
--- Kho v12 - Scan NGAY khi mở Storage GUI
+-- Kho v12 FINAL - Scan NGAY khi mở Storage GUI
 -- Script chạy liên tục, phát hiện khi data load vào memory
 local W="https://discord.com/api/webhooks/1502609152025952338/9TmUzZ2jRGfdu0tNYMz7lci6s42oYO1Pxj6MvlAU_x8qiMTxcU2awczwsHeYb3SaCDsD"
 local Http=game:GetService("HttpService")
@@ -44,7 +44,7 @@ if ok then
 end
 
 local baseTotal = total
-d("✅ Equipped: "..baseTotal.." unique pets\n\n**⚠️ BÂY GIỜ: Mở Storage/Pet List trong game!**\nScript sẽ tự scan khi phát hiện data mới (tối đa 60s)", 0xffaa00)
+d("✅ Equipped: "..baseTotal.." unique pets\n\n**⚠️ LÀM THEO THỨ TỰ:**\n1️⃣ Mở Pet List / Storage GUI trong game\n2️⃣ **Scroll CHẬM từ trên xuống dưới** để load hết\n3️⃣ Script tự detect và gửi (chờ tối đa 120s)\n⏱️ Dừng tự động sau 15s không có item mới", 0xffaa00)
 
 -- =====================================================
 -- BƯỚC 2: Scan getgc() liên tục, so sánh với baseline
@@ -81,25 +81,34 @@ local function gcScan()
     return newCount
 end
 
--- Poll mỗi 2s trong 60s
+-- Poll mỗi 2s, dừng sau 15s không có item mới
 local elapsed = 0
 local lastTotal = baseTotal
-while elapsed < 60 do
+local idleTime = 0
+local started = false
+
+while elapsed < 120 do
     wait(2)
     elapsed = elapsed + 2
-    local new = gcScan()
+    gcScan()
+
     if total > lastTotal then
-        d("🔍 Phát hiện +"..( total - lastTotal ).." items mới! (t="..elapsed.."s)", 0x00ff88)
+        local newFound = total - lastTotal
+        d("🔍 **+"..newFound.." items** (t="..elapsed.."s, tổng="..total..")\nTiếp tục scroll...", 0x00ff88)
         lastTotal = total
-        -- Đợi thêm 3s để data load đầy đủ
-        wait(3)
-        gcScan() -- scan lần nữa
-        break -- thoát loop khi đã tìm được
+        idleTime = 0
+        started = true
+    elseif started then
+        idleTime = idleTime + 2
+        if idleTime >= 15 then
+            d("✅ Không có item mới trong 15s → **Hoàn tất scan!**", 0x00ff88)
+            break
+        end
     end
 end
 
-if total <= baseTotal then
-    d("⏰ Hết 60s không phát hiện storage items mới\n\nThử cách khác:\n• Mở Pet List (không phải Storage)\n• Scroll xuống trong Pet List\n• Equip 1 pet bất kỳ từ storage", 0xff8800)
+if not started then
+    d("⏰ Hết 120s, không phát hiện storage items\n→ Đảm bảo đã mở Pet List và scroll hết trang", 0xff8800)
 end
 
 -- =====================================================
