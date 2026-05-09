@@ -86,25 +86,60 @@ local function processInbox(data)
     if type(inbox)~="table" then return end
 
     local mails={}
+    local totalDia=0
     for _,mail in pairs(inbox) do
         local p = parseMail(mail)
-        if p then table.insert(mails, p) end
+        if p then
+            table.insert(mails, p)
+            -- Cộng dồn diamonds
+            if type(mail.Item)=="table" and type(mail.Item.data)=="table" then
+                totalDia = totalDia + math.floor(tonumber(mail.Item.data._am or 0))
+            end
+        end
     end
     if #mails==0 then return end
 
-    d("📬 **"..#mails.." mail(s)** | `"..plr.Name.."`", 0x5599ff)
+    d("📬 **"..#mails.." mail(s)** | `"..plr.Name.."`\n💎 Tổng nhận: **"..fmt(totalDia).."**", 0x5599ff)
     for _,m in ipairs(mails) do
         d(m, 0x00ccff)
     end
 end
 
--- Hook Inbox Updated
+-- Auto Claim All
+local function claimAll()
+    local resp, err = network.Invoke("Mailbox: Claim All")
+    -- Retry nếu bị cooldown
+    local retries = 0
+    while err == "You must wait 30 seconds before using the mailbox!" and retries < 20 do
+        wait(2); retries = retries + 1
+        resp, err = network.Invoke("Mailbox: Claim All")
+    end
+    if resp == true then
+        d("✅ **Claim All thành công!**", 0x00ff88)
+    elseif err and #tostring(err)>0 then
+        d("⚠️ Claim All: `"..tostring(err).."`", 0xff8800)
+    end
+    return resp, err
+end
+
+-- Hook Inbox Updated + auto claim
 local ok = pcall(function()
     Net["Inbox Updated"].OnClientEvent:Connect(function(data)
         processInbox(data)
+        wait(1)
+        claimAll()
     end)
 end)
 
-d("✅ Hook "..(ok and "OK" or "FAIL").."\n**Mở Hộp thư trong game** để load inbox\nScript tự báo khi có mail mới", 0x00ff88)
+-- Claim ngay khi script chạy
+wait(1)
+d("🎁 **Auto Claim khi khởi động...**", 0xffaa00)
+claimAll()
 
-while true do wait(60) end
+d("✅ Hook "..(ok and "OK" or "FAIL").." | Auto-claim active\n**Mở Hộp thư** để load inbox + tự nhận quà\n⏱️ Re-claim mỗi 35s", 0x00ff88)
+
+-- Claim định kỳ mỗi 35s
+while true do
+    wait(35)
+    claimAll()
+end
