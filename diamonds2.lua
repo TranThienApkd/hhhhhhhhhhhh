@@ -13,11 +13,38 @@ local function fmt(n)
     else return tostring(n) end
 end
 
-local ls = plr:WaitForChild("leaderstats", 10)
+local ls = plr:FindFirstChild("leaderstats")
+if not ls then
+    -- Thử WaitForChild ngắn
+    ls = plr:WaitForChild("leaderstats", 5)
+end
 if not ls then d("❌ Không có leaderstats!", 0xff0000) return end
 
-local diamondStat = ls:WaitForChild("Diamonds", 5)
-if not diamondStat then d("❌ Không có Diamonds trong leaderstats!", 0xff0000) return end
+-- Tìm Diamond stat (thử nhiều tên)
+local diamondStat = ls:FindFirstChild("Diamonds")
+    or ls:FindFirstChild("Diamond")
+    or ls:FindFirstChild("Gems")
+    or ls:FindFirstChild("Currency")
+
+-- Nếu không tìm theo tên, lấy stat có value lớn nhất
+if not diamondStat then
+    local biggest, biggestVal = nil, 0
+    for _, stat in ipairs(ls:GetChildren()) do
+        local v = tonumber(stat.Value) or 0
+        if v > biggestVal then biggestVal = v; biggest = stat end
+    end
+    diamondStat = biggest
+end
+
+if not diamondStat then
+    -- Dump tất cả children để debug
+    local names = {}
+    for _, c in ipairs(ls:GetChildren()) do table.insert(names, c.Name.."="..tostring(c.Value)) end
+    d("❌ Không xác định được Diamond stat!\nLeaderstats: ```"..table.concat(names,"\n").."```", 0xff0000)
+    return
+end
+
+d("✅ Tìm thấy stat: **"..diamondStat.Name.."** = "..tostring(diamondStat.Value), 0x00ff00)
 
 -- Đọc tất cả stats ban đầu
 local function getAllStats()
