@@ -11,11 +11,17 @@ d("📬 **MAILBOX READER** | `"..plr.Name.."`\n🔄 Đang hook...", 0xffaa00)
 
 local network = require(RS.Library.Client.Network)
 
-local function fmt(n) n=math.floor(tonumber(n) or 0)
-    if n>=1e9 then return string.format("%.2fB",n/1e9)
-    elseif n>=1e6 then return string.format("%.2fM",n/1e6)
-    elseif n>=1e3 then return string.format("%.1fK",n/1e3)
-    else return tostring(n) end
+local function fmt(n)
+    n = math.floor(tonumber(n) or 0)
+    -- Hiện số chính xác có dấu phẩy phân cách (59999 → 59,999)
+    local s = tostring(n)
+    local result = ""
+    local len = #s
+    for i = 1, len do
+        if i > 1 and (len - i + 1) % 3 == 0 then result = result .. "," end
+        result = result .. s:sub(i, i)
+    end
+    return result
 end
 
 local function fmtTime(ts)
